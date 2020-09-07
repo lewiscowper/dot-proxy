@@ -1,56 +1,34 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"log"
-	"net"
-	"time"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/miekg/dns"
 )
 
-func handleConnection(downstream net.Conn, upstream net.Conn) {
-	fmt.Printf("%+v\n", downstream)
-	buf := make([]byte, 0, 512)
-	// tmp buffer for in progress reads
-	tmp := make([]byte, 256)
-	for {
-		n, err := downstream.Read(tmp)
-		if err != nil {
-			if err != io.EOF {
-				fmt.Printf("read error: %s\n", err)
-			}
-			break
-		}
-		fmt.Printf("read %d bytes.\n", n)
-		buf = append(buf, tmp[:n]...)
-		n, err = upstream.Write(tmp[:n])
-		if err != nil {
-			fmt.Printf("write error: %s\n", err)
-			return
-		}
-		fmt.Printf("wrote %d bytes.\n", n)
+func shutdownServer(s *dns.Server) {
+	err := s.Shutdown()
+
+	if err != nil {
+		// log with fatal level here to really kill everything in case we have an error
+		log.Fatal("Failed to shutdown server %s", s.Net)
 	}
 }
 
 func main() {
-	downstream, err := net.Listen("tcp", "localhost:2410")
-	if err != nil {
-		log.Fatal(err)
-	}
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGTERM)
+	signal.Notify(signalChan, syscall.SIGINT)
 
-	upstream, err := net.Dial("tcp", "localhost:2411")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer upstream.Close()
+	tcpServer := &dns.Server{Addr: ":2410", Net: "tcp"}
 
-	fmt.Println("Now listening")
-	for {
-		conn, err := downstream.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer conn.Close()
-		go handleConnection(conn, upstream)
-	}
+	go tcpServer.ListenAndServe()
+	log.Println("Now listening")
+
+	sig := <-signalChan
+	log.Printf("Received signal: %q, shutting down..", sig.String())
+	shutdownServer(tcpServer)
 }

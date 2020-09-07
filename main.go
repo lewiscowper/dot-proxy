@@ -54,10 +54,12 @@ func main() {
   }
 
   tcpServer := &dns.Server{Addr: ":2410", Net: "tcp"}
+  udpServer := &dns.Server{Addr: ":2410", Net: "udp"}
 
   dnsHandler := createHandler(c, conn)
 
   go tcpServer.ListenAndServe()
+  go udpServer.ListenAndServe()
   dns.Handle(".", dns.HandlerFunc(dnsHandler))
   log.Println("Now listening")
 
